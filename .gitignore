@@ -8,3 +8,8 @@ test/log/
 *.log
 .cur*
 .DS_Store
+.vs
+.idea
+/example
+send.txt
+.json
