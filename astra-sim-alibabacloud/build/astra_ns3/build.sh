@@ -42,12 +42,6 @@ function compile_astrasim {
 }
 
 function compile {
-    local BUILD_TYPE="$1" # 接收传入的构建类型参数
-    local NS3_FLAG="-d debug" # 默认设置为 debug
-
-    if [ "$BUILD_TYPE" == "Release" ] || [ "$BUILD_TYPE" == "release" ]; then
-        NS3_FLAG="-d release" # 如果是 Release，则设置为 release 标志
-    fi
     # Only compile & Run the AstraSimNetwork ns3program
     # if [ ! -f '"${INPUT_DIR}"/inputs/config/SimAI.conf' ]; then
     #     echo ""${INPUT_DIR}"/config/SimAI.conf is not exist"
@@ -59,8 +53,7 @@ function compile {
     cp -r "${ASTRA_SIM_DIR}" "${NS3_APPLICATION}"/
     cd "${NS3_DIR}/simulation"
     CC='gcc' CXX='g++' 
-# *** 修改这里：使用动态的 NS3_FLAG ***
-    ./ns3 configure **${NS3_FLAG}** --enable-mtp
+    ./ns3 configure -d debug --enable-mtp
     ./ns3 build
 
     cd "${SCRIPT_DIR:?}"
