@@ -24,10 +24,14 @@ function setup {
 
 function compile {
     local option="$1" 
+    local build_type="Debug"
+    if [ "$2" == "optimized" ] || [ "$2" == "release" ]; then
+        build_type="Release"
+    fi
     cd "${BUILD_DIR}" || exit
     case "$option" in
     "RDMA")
-        cmake -DUSE_RDMA=TRUE ..
+        cmake -DUSE_RDMA=TRUE -DCMAKE_BUILD_TYPE="$build_type" ..
         make;;
     esac
 }
@@ -42,7 +46,7 @@ case "$1" in
     cleanup_result;;
 -c|--compile)
     setup
-    compile "$2";;
+    compile "$2" "$3";;
 -h|--help|*)
     echo "AnalyticalAstra build script."
     echo "Run $0 -c to compile.";;

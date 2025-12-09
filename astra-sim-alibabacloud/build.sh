@@ -48,13 +48,13 @@ function compile {
     case "$option" in
     "ns3")
         cd "${NS3_BUILD_DIR}"
-        ./build.sh -c;;
+        ./build.sh -c "$2";; # <--- 添加 "$2" 以传递 Release/Debug 参数
     "phy")
         cd "${SIMAI_PHY_BUILD_DIR}"
-        ./build.sh -c RDMA;;
+        ./build.sh -c RDMA "$2";;
     "analytical")
         cd "${SIMAI_ANALYTICAL_BUILD_DIR}"
-        ./build.sh -c;;
+        ./build.sh -c "$2";;
     esac
 }
 
@@ -65,7 +65,7 @@ case "$1" in
 -lr|--clean-result)
     cleanup_result "$2";;
 -c|--compile)
-    compile "$2";;
+    compile "$2" "$3";;
 -h|--help|*)
     printf -- "help message\n"
     printf -- "-c|--compile mode supported ns3/phy/analytical  (example:./build.sh -c ns3)\n"

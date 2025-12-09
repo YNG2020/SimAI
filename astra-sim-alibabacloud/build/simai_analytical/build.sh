@@ -24,8 +24,12 @@ function setup {
 }
 
 function compile {
+    local build_type="Debug"
+    if [ "$1" == "optimized" ] || [ "$1" == "release" ]; then
+        build_type="Release"
+    fi
     cd "${BUILD_DIR}" || exit
-    cmake -DUSE_ANALYTICAL=TRUE ..
+    cmake -DUSE_ANALYTICAL=TRUE -DCMAKE_BUILD_TYPE="$build_type" ..
     make
 }
 
@@ -39,7 +43,7 @@ case "$1" in
     cleanup_result;;
 -c|--compile)
     setup
-    compile;;
+    compile "$2";;
 -h|--help|*)
     echo "AnalyticalAstra build script."
     echo "Run $0 -c to compile.";;

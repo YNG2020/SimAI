@@ -36,8 +36,12 @@ function cleanup_result {
 }
 
 function compile_astrasim {
+    local build_type="Debug"
+    if [ "$1" == "optimized" ] || [ "$1" == "release" ]; then
+        build_type="Release"
+    fi
     cd "${BUILD_DIR}" || exit
-    cmake ..
+    cmake -DCMAKE_BUILD_TYPE="$build_type" ..
     make
 }
 
@@ -47,13 +51,20 @@ function compile {
     #     echo ""${INPUT_DIR}"/config/SimAI.conf is not exist"
     #     cp "${INPUT_DIR}"/config/SimAI.conf "${SIM_LOG_DIR}"/config/SimAI.conf
     # fi
+    local profile="debug"
+    if [ "$1" == "release" ]; then
+        profile="optimized"
+    elif [ -n "$1" ]; then
+        profile="$1"
+    fi
+
     cp "${ASTRA_SIM_DIR}"/network_frontend/ns3/AstraSimNetwork.cc "${NS3_DIR}"/simulation/scratch/
     cp "${ASTRA_SIM_DIR}"/network_frontend/ns3/*.h "${NS3_DIR}"/simulation/scratch/
     rm -rf "${NS3_APPLICATION}"/astra-sim 
     cp -r "${ASTRA_SIM_DIR}" "${NS3_APPLICATION}"/
     cd "${NS3_DIR}/simulation"
     CC='gcc' CXX='g++' 
-    ./ns3 configure -d debug --enable-mtp
+    ./ns3 configure -d "$profile" --enable-mtp
     ./ns3 build
 
     cd "${SCRIPT_DIR:?}"
@@ -84,8 +95,8 @@ case "$1" in
     debug;;
 -c|--compile)
     setup
-    compile_astrasim
-    compile;;
+    compile_astrasim "$2"
+    compile "$2";;
 -r|--run)
     setup
     compile;;
