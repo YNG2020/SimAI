@@ -11,6 +11,8 @@ SOURCE_PHY_BIN_DIR="${SIMAI_DIR:?}"/build/simai_phy/build/simai_phynet/SimAI_phy
 TARGET_BIN_DIR="${SCRIPT_DIR:?}"/../bin
 function compile {
     local option="$1" 
+    local BUILD_TYPE=${2:-Debug} # 新增：捕获第二个参数作为构建类型，默认为 Debug
+
     case "$option" in
     "ns3")
         mkdir -p "${TARGET_BIN_DIR:?}"
@@ -22,7 +24,7 @@ function compile {
         cp -r "${NS3_DIR:?}"/* "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface
         cd "${SIMAI_DIR:?}"
         ./build.sh -lr ns3
-        ./build.sh -c ns3    
+        ./build.sh -c ns3 **"${BUILD_TYPE}"** # 将构建类型传递给子脚本
         ln -s "${SOURCE_NS3_BIN_DIR:?}" "${TARGET_BIN_DIR:?}"/SimAI_simulator;;
     "phy")
         mkdir -p "${TARGET_BIN_DIR:?}"
@@ -76,7 +78,7 @@ case "$1" in
 -l|--clean)
     cleanup_build "$2";;
 -c|--compile)
-    compile "$2";;
+    compile "$2" "$3";; # 捕获模式 ($2) 和可选的构建类型 ($3)
 -h|--help|*)
     printf -- "help message\n"
     printf -- "-c|--compile mode supported ns3/phy/analytical  (example:./build.sh -c ns3)\n"
