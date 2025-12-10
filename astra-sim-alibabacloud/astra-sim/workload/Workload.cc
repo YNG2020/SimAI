@@ -1172,11 +1172,16 @@ std::map<std::string, std::vector<bool>> Workload::decode_involved_dimensions(
   return result;
 }
 bool Workload::initialize_workload(std::string name) {
+  // 存储需要作为 checkpoint 的层索引
   std::map<int, bool> chekpoints;
+  // 存储需要在 fwd_in_bckwd（前向触发反向）的层索引
   std::map<int, bool> need_checkpoint_initiation;
+
+  // 打开 workload 输入文件
   std::ifstream inFile;
   inFile.open(name);
   if (!inFile) {
+    // 无法打开文件时立即报错并退出（此处视为致命错误）
     std::cerr << "Unable to open file: " << name << std::endl;
     std::cerr << "######### Exiting because unable to open the workload input "
                  "file #########"
@@ -1186,116 +1191,122 @@ bool Workload::initialize_workload(std::string name) {
     exit(1);
   } else {
     if (generator->id == 0) {
+      // 主节点输出打开成功信息
       std::cout << "Success in opening workload file" << std::endl;
     }
   }
- std::string firstline;
-  std::getline(inFile,firstline);
-  // std::cout << "First line is : '" << firstline << "'" << std::endl;
+
+  // 读取文件第一行（全局/元信息），并按空白分词存入 tokens
+  std::string firstline;
+  std::getline(inFile, firstline);
   std::istringstream iss(firstline);
-  std:string token;
+  std::string token;
   std::vector<std::string> tokens;
-  // bool findparallesimPolcy = false;
-  
   while (iss >> token) {
-        tokens.push_back(token);
-        // std::cout << "Token is : '" << token << "'" << std::endl;
-    }
+    tokens.push_back(token);
+  }
 
-
-
-  if(!tokens.empty()){
+  // 如果第一行有内容，解析并行策略
+  if (!tokens.empty()) {
     parallelismPolicy = decode_parallelsim(tokens[0]);
   }
 
+  // 针对 Transformer 系列策略，解析额外的全局参数（例如 model_parallel、ep、pp、vpp、ga、all_gpus）
   if (parallelismPolicy == ParallelismPolicy::TransformerFwdInBckwd ||
       parallelismPolicy == ParallelismPolicy::Transformer) {
-        for (size_t i = 1; i < tokens.size(); i = i+1){
-          if(tokens[i]=="model_parallel_NPU_group:"){
-            model_parallel_npu_group = std::stoi(tokens[i+1]);
+    for (size_t i = 1; i < tokens.size(); i = i + 1) {
+      if (tokens[i] == "model_parallel_NPU_group:") {
+        model_parallel_npu_group = std::stoi(tokens[i + 1]);
+        if (generator->id == 0) {
+          std::cout << "model_parallel_NPU_group is " << model_parallel_npu_group << std::endl;
+        }
+      } else if (tokens[i] == "ep:") {
+        expert_parallel_npu_group = std::stoi(tokens[i + 1]);
+      } else if (tokens[i] == "pp:") {
+        pipeline_model_parallelism = std::stoi(tokens[i + 1]);
+      } else if (tokens[i] == "vpp:") {
+        vpp = std::stoi(tokens[i + 1]);
+      } else if (tokens[i] == "ga:") {
+        GA = std::stoi(tokens[i + 1]);
+      } else if (tokens[i] == "all_gpus:") {
+        all_gpus = std::stoi(tokens[i + 1]);
+      }
+    }
+
+    // 对于 TransformerFwdInBckwd，还解析 checkpoint 列表与需要触发检查点的层
+    if (parallelismPolicy == ParallelismPolicy::TransformerFwdInBckwd) {
+      if (generator->id == 0) {
+        std::cout << "checkpoints layers are: ";
+      }
+      for (size_t i = 1; i < tokens.size(); i = i + 1) {
+        if (tokens[i] == "checkpoints:") {
+          int account = std::stoi(tokens[i + 1]);
+          while (account-- > 0) {
+            int j = 2;
+            int layer = std::stoi(tokens[i + j]);
+            chekpoints[layer] = true;  // 标记该层为 checkpoint
             if (generator->id == 0) {
-              std::cout <<"model_parallel_NPU_group is " << model_parallel_npu_group << std::endl;
+              std::cout << layer << ", ";
             }
-          }else if(tokens[i]=="ep:"){
-            expert_parallel_npu_group = std::stoi(tokens[i+1]);
-          }else if(tokens[i]== "pp:"){
-            pipeline_model_parallelism = std::stoi(tokens[i+1]);
-          }else if(tokens[i]=="vpp:"){
-            vpp = std::stoi(tokens[i+1]);
-          }else if(tokens[i]=="ga:"){
-            GA = std::stoi(tokens[i+1]);
-          }else if(tokens[i]=="all_gpus:"){
-            all_gpus = std::stoi(tokens[i+1]);
+            j++;
+          }
+        } else if (tokens[i] == "checkpoint_initiates:") {
+          if (generator->id == 0) {
+            std::cout << std::endl;
+            std::cout << "layers initiating fwd_in_bckwd are: ";
+          }
+          int account = std::stoi(tokens[i + 1]);
+          while (account-- > 0) {
+            int j = 2;
+            int layer = std::stoi(tokens[i + j]);
+            need_checkpoint_initiation[layer] = true;  // 标记该层需要发起 fwd_in_bckwd
+            if (generator->id == 0) {
+              std::cout << layer << ", ";
+            }
+            j++;
+          }
+          if (generator->id == 0) {
+            std::cout << std::endl;
           }
         }
+      }
+    }
 
-        if(parallelismPolicy == ParallelismPolicy::TransformerFwdInBckwd){
-          if (generator->id == 0) {
-            std::cout << "checkpoints layers are: ";
-          }
-          for(size_t i = 1; i < tokens.size(); i = i+1){
-            if(tokens[i]=="checkpoints:"){
-              int account = std::stoi(tokens[i+1]);
-              while(account-- >0){
-                int j = 2;
-                int layer = std::stoi(tokens[i+j]);
-                chekpoints[layer] = true;
-                if (generator->id == 0) {
-                  std::cout << layer << ", ";
-                }
-                j++;
-              }
-                
-            }else if(tokens[i]=="checkpoint_initiates:"){
-                if (generator->id == 0) {
-                  std::cout << std::endl;
-                  std::cout << "layers initiating fwd_in_bckwd are: ";
-                }
-                int account = std::stoi(tokens[i+1]);
-                while(account-- >0){
-                  int j = 2;
-                  int layer = std::stoi(tokens[i+j]);
-                  need_checkpoint_initiation[layer] = true;
-                  if (generator->id == 0) {
-                    std::cout << layer << ", ";
-                  }
-                  j++;
-                }
-                if (generator->id == 0) {
-                  std::cout << std::endl;
-                }
-              }
-            }
-          }
-      }else if(parallelismPolicy == ParallelismPolicy::DLRM ||
-                parallelismPolicy == ParallelismPolicy::DLRMEnhanced){
-                  for (size_t i = 1; i < tokens.size(); i = i+1){
-                    if(tokens[i]=="DLRM_LAST_BOTTOM_LAYER:"){
-                      DLRM_LAST_BOTTOM_LAYER = std::stoi(tokens[i+1]);
-                    }
-                  }
-                if (generator->id == 0) {
-                  std::cout
-                  << "****************** info: DLRM workload last bottom layer is: "
-                  << DLRM_LAST_BOTTOM_LAYER << std::endl;
-                }
-        }else if (parallelismPolicy == ParallelismPolicy::None) {
-          #ifndef PHY_MTP
-          std::cerr << "######### Exiting because unable to decode the workload "
+  } else if (parallelismPolicy == ParallelismPolicy::DLRM ||
+             parallelismPolicy == ParallelismPolicy::DLRMEnhanced) {
+    // 针对 DLRM，解析 DLRM 特定的参数
+    for (size_t i = 1; i < tokens.size(); i = i + 1) {
+      if (tokens[i] == "DLRM_LAST_BOTTOM_LAYER:") {
+        DLRM_LAST_BOTTOM_LAYER = std::stoi(tokens[i + 1]);
+      }
+    }
+    if (generator->id == 0) {
+      std::cout << "****************** info: DLRM workload last bottom layer is: "
+                << DLRM_LAST_BOTTOM_LAYER << std::endl;
+    }
+  } else if (parallelismPolicy == ParallelismPolicy::None) {
+#ifndef PHY_MTP
+    // 无法识别并行策略视为致命错误（非 PHY_MTP 模式）
+    std::cerr << "######### Exiting because unable to decode the workload "
                  "parallelization strategy #########"
-                  << std::endl;
-          inFile.close();
-          exit(1);
-          #else
-          parallelismPolicy = ParallelismPolicy::TransformerFwdInBckwd;
-          #endif
+              << std::endl;
+    inFile.close();
+    exit(1);
+#else
+    // 在 PHY_MTP 模式下，默认回退为 TransformerFwdInBckwd
+    parallelismPolicy = ParallelismPolicy::TransformerFwdInBckwd;
+#endif
   }
+
+  // 计算通用涉及维度（fwd/ig/wg）
   std::map<std::string, std::vector<bool>> general_involved_dimensions =
       decode_involved_dimensions(parallelismPolicy, model_parallel_npu_group);
+
+  // 解析 pp_comm（流水线通信）大小（可选）
   pp_commsize = 0;
-  for (size_t i = 1; i < tokens.size(); i = i+1){
-    if(tokens[i]=="pp_comm"||tokens[i]=="pp_comm:"){
-      pp_commsize = std::stoi(tokens[i+1]);
+  for (size_t i = 1; i < tokens.size(); i = i + 1) {
+    if (tokens[i] == "pp_comm" || tokens[i] == "pp_comm:") {
+      pp_commsize = std::stoi(tokens[i + 1]);
     }
   }
   if (generator->id == 0) {
@@ -1319,6 +1330,7 @@ bool Workload::initialize_workload(std::string name) {
   SIZE = lines;
   layers = new Layer*[SIZE];
   for (int i = 0; i < lines; i++) {
+    // === 开始逐层解析文件，每一层含：id、依赖、fwd/ig/wg 的计算/通信时间与类型等 ===
     std::string id;
     inFile >> id;
     int depen;
@@ -1528,6 +1540,7 @@ bool Workload::initialize_workload(std::string name) {
       }
     }
     if (generator->id == 0) {
+      // 每层信息的简单日志（主节点输出）
       std::cout << "id: " << id << " , depen: " << depen
                 << " , wg_comp_time: " << wg_compute_time << std::endl;
     }
@@ -1579,6 +1592,16 @@ bool Workload::initialize_workload(std::string name) {
     layers[i] = l;
   }
   if (generator->id == 0) {
+    // 主节点 (generator->id == 0) 打印 Workload 的摘要信息，便于调试与日志记录：
+    // - run_type: workload 第一行解析得到的并行策略字符串（例如 "DATA", "HYBRID_TRANSFORMER" 等），
+    //             用于快速识别该作业采用的并行化类型。
+    // - TOTAL_PASS: 预设的训练/测试轮次（number of passes），表示前向+反向的重复次数。
+    // - lines: 文件第二行解析得到的层数（与 `SIZE` 等价），表示本 workload 包含的 Layer 数量。
+    // - generator->compute_scale: 全局的计算缩放因子（用于将 workload 文件中的计算时间按该因子放大/缩小），
+    //                           常用于仿真中调整计算强度以匹配目标硬件/配置。
+    // - generator->comm_scale: 全局的通信缩放因子（用于将通信量按该因子放大/缩小），
+    //                        常用于评估不同网络带宽/延迟对模拟结果的影响。
+    // 该行输出仅作为快速信息摘要，不影响仿真逻辑。
     std::cout << "type: " << run_type << " ,num passes: " << TOTAL_PASS
               << " ,lines: " << lines
               << " compute scale: " << generator->compute_scale
