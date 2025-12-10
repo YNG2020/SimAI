@@ -20,16 +20,30 @@ function compile {
     case "$option" in
     "ns3")
         mkdir -p "${TARGET_BIN_DIR:?}"
-        rm -rf "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface/
+        
+        # 仅当 ns3-interface 不存在时才进行初始化复制
+        if [ ! -d "${SIMAI_DIR:?}/extern/network_backend/ns3-interface/" ]; then
+            mkdir -p "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface
+            cp -r "${NS3_DIR:?}"/* "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface
+        fi
+
+        # 更新软链接前先删除旧的
         if [ -L "${TARGET_BIN_DIR:?}/SimAI_simulator" ]; then
             rm -rf "${TARGET_BIN_DIR:?}"/SimAI_simulator
         fi
-        mkdir -p "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface
-        cp -r "${NS3_DIR:?}"/* "${SIMAI_DIR:?}"/extern/network_backend/ns3-interface
+        
         cd "${SIMAI_DIR:?}"
-        ./build.sh -lr ns3
+        # 移除 -lr (clean-result) 以保留构建产物
+        # ./build.sh -lr ns3 
         ./build.sh -c ns3 "$ns3_profile"
         local source_bin="${SIMAI_DIR:?}/extern/network_backend/ns3-interface/simulation/build/scratch/ns3.36.1-AstraSimNetwork-${ns3_profile}"
+        
+        # 检查源文件是否存在
+        if [ ! -f "$source_bin" ]; then
+            echo "Error: Binary not found at $source_bin"
+            exit 1
+        fi
+        
         ln -s "${source_bin}" "${TARGET_BIN_DIR:?}"/SimAI_simulator;;
     "phy")
         mkdir -p "${TARGET_BIN_DIR:?}"

@@ -32,19 +32,19 @@ class CSVWriter;
 
 namespace AstraSim {
 enum class ParallelismPolicy {
-  MicroBenchmark,
-  Data,
-  Transformer,
-  TransformerFwdInBckwd,
-  DLRM,
-  DLRMEnhanced,
-  Model,
-  HybridDataModel,
-  HybridModelData,
-  HybridCustomized,
-  DistributedInference,
-  All,
-  None
+  MicroBenchmark, // 微基准测试：通常用于测试基础通信原语（如 AllReduce, AllToAll）的性能，不涉及复杂的模型结构。
+  Data,           // 数据并行 (Data Parallelism)：模型在所有设备上复制，数据分片处理。通信主要发生在反向传播时的梯度聚合 (Weight Gradient)。
+  Transformer,    // Transformer 混合并行：针对 Transformer 模型的混合并行策略（通常结合数据并行和模型并行）。根据 model_parallel_NPU_group 划分维度。
+  TransformerFwdInBckwd, // Transformer 激活重算 (Activation Recomputation)：在反向传播阶段重新计算前向传播的激活值，以节省显存。涉及 Checkpoint 机制。
+  DLRM,           // DLRM (Deep Learning Recommendation Model) 策略：针对推荐系统的特定并行策略，通常涉及底层的嵌入表 (Embedding Table) 和顶层的 MLP。
+  DLRMEnhanced,   // 增强版 DLRM 策略：DLRM 的变体或优化版本，可能包含更复杂的通信模式或优化。
+  Model,          // 模型并行 (Model Parallelism)：模型被分割到不同设备上。前向传播和输入梯度计算涉及跨设备通信。
+  HybridDataModel,// 混合并行 (数据优先)：混合了数据并行和模型并行。通常指在高维度使用数据并行，低维度使用模型并行（具体取决于 decode_involved_dimensions 的实现）。
+  HybridModelData,// 混合并行 (模型优先)：混合了数据并行和模型并行。通常指在高维度使用模型并行，低维度使用数据并行。
+  HybridCustomized,// 自定义混合并行：允许用户通过 specific_parallelsim 字符串自定义每一层的并行策略和参与维度。
+  DistributedInference, // 分布式推理：针对推理场景的并行策略，通常只涉及前向传播的通信，没有反向传播。
+  All,            // 全并行/全通信：通常用于调试或特殊场景，所有阶段（Fwd, IG, WG）都在所有维度上进行通信。
+  None            // 无策略/未定义：默认值或错误状态。
 };
 
 class Workload : Callable {

@@ -1069,15 +1069,38 @@ ParallelismPolicy Workload::decode_parallelsim(std::string parallelism) {
   else
     return ParallelismPolicy::None;
 }
+/**
+ * @brief 解码参与通信的维度 (Decode Involved Dimensions)
+ * 
+ * 该函数根据给定的并行策略 (ParallelismPolicy) 和模型并行组大小 (model_parallel_npu_group)，
+ * 确定在 Forward Pass (fwd), Input Gradient (ig), 和 Weight Gradient (wg) 阶段，
+ * 哪些逻辑维度需要参与通信。
+ * 
+ * @param policy 并行策略 (例如 Data, Model, Transformer 等)
+ * @param model_parallel_npu_group 模型并行组的大小 (仅在 Transformer 相关策略中使用)
+ * @return std::map<std::string, std::vector<bool>> 
+ *         返回一个映射，键为 "fwd", "ig", "wg"，值为布尔向量。
+ *         向量的每个元素对应一个逻辑维度，true 表示该维度参与通信，false 表示不参与。
+ */
 std::map<std::string, std::vector<bool>> Workload::decode_involved_dimensions(
     ParallelismPolicy policy,
     int model_parallel_npu_group) {
+  // [解释] 逻辑维度与长度 10 的含义：
+  // 1. 逻辑维度 (Logical Dimension): 对应网络拓扑的层级。
+  //    例如：Dim 0 = 卡间(NVLink), Dim 1 = 节点间(NIC), Dim 2 = 机架间(Switch) 等。
+  // 2. 长度 10: 这是一个硬编码的上限值。
+  //    开发者认为目前的集群网络拓扑层级不会超过 10 层，因此预设了 10 个布尔值。
+  //    每个位置 (true/false) 表示该层级是否参与通信。
   std::map<std::string, std::vector<bool>> result;
+  // 初始化全 false 向量 (都不参与通信)
   std::vector<bool> none{
       false, false, false, false, false, false, false, false, false, false};
+  // 初始化全 true 向量 (都参与通信)
   std::vector<bool> all{
       true, true, true, true, true, true, true, true, true, true};
+  
   if (policy == ParallelismPolicy::All) {
+    // All 策略：所有阶段在所有维度都通信
     result["fwd"] = all;
     result["ig"] = all;
     result["wg"] = all;
@@ -1085,16 +1108,26 @@ std::map<std::string, std::vector<bool>> Workload::decode_involved_dimensions(
       policy == ParallelismPolicy::Data || policy == ParallelismPolicy::DLRM ||
       policy == ParallelismPolicy::DLRMEnhanced ||
       policy == ParallelismPolicy::MicroBenchmark) {
+    // 数据并行类策略：
+    // fwd 和 ig 阶段不通信 (本地计算)
+    // wg 阶段在所有维度通信 (AllReduce 梯度聚合)
     result["fwd"] = none;
     result["ig"] = none;
     result["wg"] = all;
   } else if (
       policy == ParallelismPolicy::Model ||
       policy == ParallelismPolicy::DistributedInference) {
+    // 模型并行类策略：
+    // fwd 和 ig 阶段在所有维度通信 (传递激活值/梯度)
+    // wg 阶段不通信 (本地更新)
     result["fwd"] = all;
     result["ig"] = all;
     result["wg"] = none;
   } else if (policy == ParallelismPolicy::HybridModelData) {
+    // 混合并行 (模型优先)：
+    // 低维度 (0) 为数据并行，高维度 (1-9) 为模型并行
+    // 注意：这里的实现似乎与名字相反，data 向量只有第0维是 true，model 向量第1-9维是 true
+    // 如果 wg 用 data，说明 wg 只在第0维通信；fwd/ig 用 model，说明在第1-9维通信。
     std::vector<bool> data{
         true, false, false, false, false, false, false, false, false, false};
     std::vector<bool> model{
@@ -1103,6 +1136,8 @@ std::map<std::string, std::vector<bool>> Workload::decode_involved_dimensions(
     result["ig"] = model;
     result["wg"] = data;
   } else if (policy == ParallelismPolicy::HybridDataModel) {
+    // 混合并行 (数据优先)：
+    // 低维度 (0) 为模型并行，高维度 (1-9) 为数据并行
     std::vector<bool> model{
         true, false, false, false, false, false, false, false, false, false};
     std::vector<bool> data{
@@ -1113,18 +1148,23 @@ std::map<std::string, std::vector<bool>> Workload::decode_involved_dimensions(
   } else if (
       policy == ParallelismPolicy::TransformerFwdInBckwd ||
       policy == ParallelismPolicy::Transformer) {
+    // Transformer 混合并行：
+    // 动态计算模型并行和数据并行的边界 (break_dimension)
     int model_parallel_boundary =
         generator->break_dimension(model_parallel_npu_group);
     std::vector<bool> model;
     std::vector<bool> data;
+    // 0 到 boundary 的维度属于模型并行
     for (int i = 0; i <= model_parallel_boundary; i++) {
       model.push_back(true);
       data.push_back(false);
     }
+    // boundary+1 到最后的维度属于数据并行
     for (int i = model_parallel_boundary + 1; i < 10; i++) {
       model.push_back(false);
       data.push_back(true);
     }
+    // fwd/ig 使用模型并行维度，wg 使用数据并行维度
     result["fwd"] = model;
     result["ig"] = model;
     result["wg"] = data;

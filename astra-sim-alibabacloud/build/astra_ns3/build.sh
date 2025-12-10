@@ -60,12 +60,28 @@ function compile {
 
     cp "${ASTRA_SIM_DIR}"/network_frontend/ns3/AstraSimNetwork.cc "${NS3_DIR}"/simulation/scratch/
     cp "${ASTRA_SIM_DIR}"/network_frontend/ns3/*.h "${NS3_DIR}"/simulation/scratch/
-    rm -rf "${NS3_APPLICATION}"/astra-sim 
-    cp -r "${ASTRA_SIM_DIR}" "${NS3_APPLICATION}"/
+    
+    # 仅当 astra-sim 目录不存在时才删除重建，否则只更新内容
+    if [ ! -d "${NS3_APPLICATION}"/astra-sim ]; then
+        cp -r "${ASTRA_SIM_DIR}" "${NS3_APPLICATION}"/
+    else
+        # 使用 rsync 或 cp -u 更新文件，避免不必要的重建
+        cp -r "${ASTRA_SIM_DIR}"/* "${NS3_APPLICATION}"/astra-sim/
+    fi
+    
     cd "${NS3_DIR}/simulation"
     CC='gcc' CXX='g++' 
     ./ns3 configure -d "$profile" --enable-mtp
     ./ns3 build
+
+    # 确保软链接指向正确的文件
+    local target_bin="${NS3_DIR}/simulation/build/scratch/ns3.36.1-AstraSimNetwork-${profile}"
+    if [ -f "$target_bin" ]; then
+        echo "Build successful: $target_bin"
+    else
+        echo "Error: Build failed, binary not found at $target_bin"
+        exit 1
+    fi
 
     cd "${SCRIPT_DIR:?}"
 }
